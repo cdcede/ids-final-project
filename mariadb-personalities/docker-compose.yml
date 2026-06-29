@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+
+  mariadb:
+    image: urtatsberrocal/mariadb-personalities:latest
+    container_name: mariadb_personalities
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./data:/var/lib/mysql-files/data:ro
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  hive:
+    image: iraida107/hive-users:latest
+    platform: linux/amd64
+    container_name: hive_users
+    ports:
+      - "10000:10000"   # HiveServer2 (JDBC/ODBC)
+      - "10002:10002"   # HiveServer2 Web UI
+      - "9083:9083"     # Hive Metastore
+    volumes:
+      - ./users1.json:/opt/hive/users1.json:ro
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  cassandra-node1:
+    image: mikelez/ids-twitter-cassandra:latest
+    platform: linux/amd64
+    container_name: cassandra_node1
+    ports:
+      - "9042:9042"   # CQL native transport (client connections)
+    environment:
+      - CASSANDRA_CLUSTER_NAME=${CASSANDRA_CLUSTER_NAME}
+      - CASSANDRA_SEEDS=${CASSANDRA_SEEDS}
+
+  cassandra-node2:
+    image: mikelez/ids-twitter-cassandra:latest
+    platform: linux/amd64
+    container_name: cassandra_node2
+    environment:
+      - CASSANDRA_CLUSTER_NAME=${CASSANDRA_CLUSTER_NAME}
+      - CASSANDRA_SEEDS=${CASSANDRA_SEEDS}
+    depends_on:
+      - cassandra-node1
+
+  cassandra-node3:
+    image: mikelez/ids-twitter-cassandra:latest
+    platform: linux/amd64
+    container_name: cassandra_node3
+    environment:
+      - CASSANDRA_CLUSTER_NAME=${CASSANDRA_CLUSTER_NAME}
+      - CASSANDRA_SEEDS=${CASSANDRA_SEEDS}
+    depends_on:
+      - cassandra-node1
+
+volumes:
+  mariadb_data:

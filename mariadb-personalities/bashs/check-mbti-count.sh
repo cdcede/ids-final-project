@@ -1,0 +1,1 @@
+docker exec -it mariadb_personalities mariadb -u ids_user -pids_password user_personalities -e "SELECT mbti_personality, COUNT(*) FROM mbti_labels GROUP BY mbti_personality ORDER BY mbti_personality;"

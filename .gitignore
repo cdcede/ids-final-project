@@ -1,0 +1,21 @@
+# --- Dataset (too large for git; provide your own, see README) ---
+tweets1.json
+
+# --- Connector distribution archive (the extracted jars/ are what Connect uses) ---
+confluentinc-kafka-connect-mqtt-*.zip
+
+# --- macOS ---
+.DS_Store
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
