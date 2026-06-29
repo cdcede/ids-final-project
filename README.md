@@ -64,9 +64,10 @@ name (`kafka`, `druid`, `mariadb`, `hive`, `cas1`, `presto`, …).
 ## Prerequisites
 
 - Docker + Docker Compose
-- **~16 GB** allocated to Docker. The stack is memory-tight: three Cassandra
-  nodes + Druid + Kafka + Presto + Superset. Below that, Cassandra nodes get
-  OOM-killed (exit 137) on startup.
+- **~14 GB** allocated to Docker. The stack is memory-tight: three Cassandra
+  nodes + Druid + Kafka + Presto + Superset. The Cassandra nodes are trimmed to
+  a 256M heap / 1024m limit each (ample for the 6 067-row graph); if a node gets
+  OOM-killed (exit 137) on startup, raise its `mem_limit` in `compose.yaml`.
 - `tweets1.json` (~200 MB) in the project root — **not tracked in git** (exceeds
   GitHub's 100 MB limit). The `python-mqtt` publisher mounts it read-only; without
   it the publisher won't start. Shape:

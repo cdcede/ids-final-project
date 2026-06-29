@@ -197,9 +197,9 @@ services:
       CASSANDRA_SEEDS: "cas1"
       CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
       CASSANDRA_DC: datacenter1
-      MAX_HEAP_SIZE: "512M"
-      HEAP_NEWSIZE: "128M"
-    mem_limit: 1500m
+      MAX_HEAP_SIZE: "256M"
+      HEAP_NEWSIZE: "64M"
+    mem_limit: 1024m
     ports:
       - "9042:9042"   # CQL native transport
     volumes:
@@ -211,7 +211,7 @@ services:
     container_name: cas2
     hostname: cas2
     environment: *cassandra-env
-    mem_limit: 1500m
+    mem_limit: 1024m
     depends_on:
       cas1:
         condition: service_healthy
@@ -224,7 +224,7 @@ services:
     container_name: cas3
     hostname: cas3
     environment: *cassandra-env
-    mem_limit: 1500m
+    mem_limit: 1024m
     depends_on:
       cas2:
         condition: service_healthy
