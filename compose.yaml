@@ -89,7 +89,10 @@ services:
       - ./:/workspace
 
   python-mqtt:
-    image: cdcede/python-mqtt:1.0
+    # Built locally from ./python (base python:3.11-slim is multi-arch). The
+    # prebuilt cdcede/python-mqtt:1.0 is published arm64-only -> fails on amd64.
+    build: ./python
+    image: ids-python-mqtt:latest
     container_name: python-mqtt
     depends_on:
       - mosquitto
@@ -141,7 +144,11 @@ services:
   # RELATIONAL stores (queried directly by Superset)
   # ---------------------------------------------------------------------------
   mariadb:
-    image: urtatsberrocal/mariadb-personalities:latest
+    # Built locally from ./mariadb-personalities (base mariadb:10.11 is multi-arch
+    # / amd64-ready). The teammate's prebuilt image urtatsberrocal/mariadb-
+    # personalities is published arm64-only, so it cannot run on amd64 hosts.
+    build: ./mariadb-personalities
+    image: ids-mariadb-personalities:latest
     container_name: mariadb_personalities
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
