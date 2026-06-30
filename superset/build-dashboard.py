@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
 """Build the IDS dashboard in Superset via its REST API (stdlib only).
 
-Assumes the four databases (ids 1-4) and datasets (ids 1-4) already exist:
-  1 Cassandra (via Presto)  -> dataset 1  twitter.edges
-  2 MariaDB (personalities) -> dataset 2  user_personalities.mbti_labels
-  3 Hive (users)            -> dataset 3  default.users_data
-  4 Druid (tweets)          -> dataset 4  druid."tweets-kafka"
+Creates the four datasets (if missing) on top of the four database
+connections, then builds one chart per source and a dashboard laying them
+out together:
+  Cassandra (via Presto)  -> twitter.edges                 -> "Users in follow graph"
+  MariaDB (personalities) -> user_personalities.mbti_labels -> "MBTI distribution"
+  Hive (users)            -> default.users_data            -> "Total users (Hive)"
+  Druid (tweets)          -> druid."tweets-kafka"          -> "Tweets over time"
+
+Prerequisite: the four database *connections* must already exist
+(run superset/setup-connections.sh first). The *datasets* are created here,
+so this is safe to run on a fresh stack. Dataset creation is idempotent
+(find-or-create by name). A source whose table is not yet queryable
+(e.g. Druid before any tweets have streamed) is skipped with a warning
+instead of aborting the whole build.
 """
 import json
 import urllib.request
+import urllib.error
 import http.cookiejar
 
 BASE = "http://localhost:8089"
@@ -34,6 +44,53 @@ token = call("POST", "/api/v1/security/login",
 csrf = call("GET", "/api/v1/security/csrf_token/", token=token)["result"]
 
 
+# ---- datasets -------------------------------------------------------------
+# (database connection name, schema, table) for each source.
+SOURCES = [
+    ("Cassandra (via Presto)",  "twitter",            "edges"),
+    ("MariaDB (personalities)", "user_personalities", "mbti_labels"),
+    ("Hive (users)",            "default",            "users_data"),
+    ("Druid (tweets)",          "druid",              "tweets-kafka"),
+]
+
+# database connection name -> id (must already exist; created by setup-connections.sh)
+databases = {d["database_name"]: d["id"]
+             for d in call("GET", "/api/v1/database/", token=token)["result"]}
+# (db_id, schema, table) -> existing dataset id
+existing = {(d["database"]["id"], d.get("schema") or "", d["table_name"]): d["id"]
+            for d in call("GET", "/api/v1/dataset/", token=token)["result"]}
+
+
+def ensure_dataset(db_name, schema, table):
+    """Return the dataset id for (db_name, schema, table), creating it if
+    needed. Returns None if the connection or table is not (yet) available."""
+    if db_name not in databases:
+        print(f"  ! database '{db_name}' not found — run setup-connections.sh first; skipping")
+        return None
+    db = databases[db_name]
+    key = (db, schema or "", table)
+    if key in existing:
+        print(f"  dataset {schema}.{table} already exists -> id {existing[key]}")
+        return existing[key]
+    try:
+        did = call("POST", "/api/v1/dataset/", token=token, csrf=csrf,
+                   body={"database": db, "schema": schema, "table_name": table})["id"]
+        print(f"  dataset {schema}.{table} created -> id {did}")
+        return did
+    except urllib.error.HTTPError as e:
+        print(f"  ! could not create dataset {schema}.{table} "
+              f"(HTTP {e.code}: table not queryable yet) — skipping its chart")
+        return None
+
+
+print("==> datasets")
+ds = {}  # database name -> dataset id (only for sources that exist)
+for db_name, schema, table in SOURCES:
+    did = ensure_dataset(db_name, schema, table)
+    if did is not None:
+        ds[db_name] = did
+
+
 def count_metric(label):
     return {"expressionType": "SQL", "sqlExpression": "COUNT(*)", "label": label}
 
@@ -48,49 +105,53 @@ def make_chart(name, ds_id, viz, params):
     return cid
 
 
-charts = []
-# 1) Druid — tweets over time (live stream)
-charts.append((make_chart(
-    "Tweets over time", 4, "echarts_timeseries_line", {
+# ---- charts: one per source that has a dataset ----------------------------
+# (database name, chart name, viz type, params)
+CHART_SPECS = [
+    ("Druid (tweets)", "Tweets over time", "echarts_timeseries_line", {
         "x_axis": "__time", "time_grain_sqla": "PT1M",
         "metrics": [count_metric("tweets")], "groupby": [],
-        "row_limit": 10000, "adhoc_filters": []}), "Tweets over time"))
-
-# 2) MariaDB — MBTI personality distribution
-charts.append((make_chart(
-    "MBTI distribution", 2, "pie", {
+        "row_limit": 10000, "adhoc_filters": []}),
+    ("MariaDB (personalities)", "MBTI distribution", "pie", {
         "groupby": ["mbti_personality"], "metric": count_metric("count"),
-        "row_limit": 100, "adhoc_filters": []}), "MBTI distribution"))
-
-# 3) Cassandra (via Presto) — total users in the follow graph
-charts.append((make_chart(
-    "Users in follow graph", 1, "big_number_total", {
+        "row_limit": 100, "adhoc_filters": []}),
+    ("Cassandra (via Presto)", "Users in follow graph", "big_number_total", {
         "metric": count_metric("graph users"), "adhoc_filters": []}),
-    "Users in follow graph"))
-
-# 4) Hive — total users
-charts.append((make_chart(
-    "Total users (Hive)", 3, "big_number_total", {
+    ("Hive (users)", "Total users (Hive)", "big_number_total", {
         "metric": count_metric("users"), "adhoc_filters": []}),
-    "Total users (Hive)"))
+]
 
-# ---- assemble dashboard layout (2 rows x 2 charts) -------------------------
+print("==> charts")
+charts = []  # list of (chart_id, chart_name)
+for db_name, name, viz, params in CHART_SPECS:
+    if db_name not in ds:
+        print(f"  - skipping '{name}' (no dataset for {db_name})")
+        continue
+    charts.append((make_chart(name, ds[db_name], viz, params), name))
+
+if not charts:
+    raise SystemExit("No datasets available — nothing to build. "
+                     "Run setup-connections.sh and make sure the stack is up.")
+
+# ---- assemble dashboard layout (2 charts per row) -------------------------
 pos = {
     "DASHBOARD_VERSION_KEY": "v2",
     "ROOT_ID": {"type": "ROOT", "id": "ROOT_ID", "children": ["GRID_ID"]},
-    "GRID_ID": {"type": "GRID", "id": "GRID_ID",
-                "children": ["ROW-1", "ROW-2"], "parents": ["ROOT_ID"]},
+    "GRID_ID": {"type": "GRID", "id": "GRID_ID", "children": [], "parents": ["ROOT_ID"]},
     "HEADER_ID": {"type": "HEADER", "id": "HEADER_ID",
                   "meta": {"text": "IDS Twitter — Multi-source Dashboard"}},
 }
-rows = [["R1C1", "R1C2"], ["R2C1", "R2C2"]]
-for ri, row in enumerate(rows, 1):
-    rid = f"ROW-{ri}"
-    pos[rid] = {"type": "ROW", "id": rid, "children": row,
+NCOLS = 2
+for i in range(0, len(charts), NCOLS):
+    rid = f"ROW-{i // NCOLS + 1}"
+    pos["GRID_ID"]["children"].append(rid)
+    cells = []
+    pos[rid] = {"type": "ROW", "id": rid, "children": cells,
                 "parents": ["ROOT_ID", "GRID_ID"],
                 "meta": {"background": "BACKGROUND_TRANSPARENT"}}
-    for ci, cell in enumerate(row):
-        cid, cname = charts[(ri - 1) * 2 + ci]
+    for j, (cid, cname) in enumerate(charts[i:i + NCOLS]):
+        cell = f"CHART-{i + j + 1}"
+        cells.append(cell)
         pos[cell] = {"type": "CHART", "id": cell, "children": [],
                      "parents": ["ROOT_ID", "GRID_ID", rid],
                      "meta": {"chartId": cid, "width": 6, "height": 50,
