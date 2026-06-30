@@ -50,9 +50,9 @@ name (`kafka`, `druid`, `mariadb`, `hive`, `cas1`, `presto`, …).
 | `mosquitto` | `eclipse-mosquitto:2` | 1883 | MQTT broker |
 | `kafka-connect` | `confluentinc/cp-kafka-connect:7.5.0` | 8083 | MQTT → Kafka bridge |
 | `druid` | `jdvelasq/druid:0.22.1` | 8888, 8088, 9999, 50070 | Real-time analytics DB |
-| `python-mqtt` | `cdcede/python-mqtt:1.0` | — | Tweet publisher |
+| `python-mqtt` | `ids-python-mqtt` (built) | — | Tweet publisher |
 | `init` | `curlimages/curl:8.11.0` | — | One-shot: registers connector + Druid supervisor |
-| `mariadb` | `urtatsberrocal/mariadb-personalities:latest` | 3306 | MBTI personalities |
+| `mariadb` | `ids-mariadb-personalities` (built) | 3306 | MBTI personalities |
 | `hive` | `iraida107/hive-users:latest` | 10000, 10002, 9083 | Users (HiveServer2) |
 | `cas1`/`cas2`/`cas3` | `mikelez/ids-twitter-cassandra:latest` | 9042 (cas1) | 3-node / RF=3 follow graph |
 | `cassandra-loader` | `mikelez/ids-twitter-cassandra:latest` | — | One-shot: creates schema + loads `edges` |
@@ -153,7 +153,7 @@ docker exec druid curl -s -X POST http://localhost:8082/druid/v2/sql/ \
 ├── connect-mqtt-source.json     # MQTT Source Connector config
 ├── druid-supervisor.json        # Druid Kafka ingestion supervisor spec
 ├── jars/                        # Connector plugins for Kafka Connect
-├── python/                      # Source for cdcede/python-mqtt (tweet publisher)
+├── python/                      # Source for the python-mqtt image, built locally (tweet publisher)
 ├── mariadb-personalities/       # Source data + utility scripts for MariaDB/Hive
 │   ├── data/                    #   mbti_labels.csv (mounted into MariaDB)
 │   └── users1.json/             #   users payload (mounted into Hive)
